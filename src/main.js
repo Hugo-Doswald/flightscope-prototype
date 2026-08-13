@@ -1,8 +1,8 @@
 import './style.css';
 import './v022.css';
-import { createIcons, Radar, Map, PanelsTopLeft, Bookmark, SlidersHorizontal, Search, X, ChevronLeft, Plane } from 'lucide';
+import { createIcons, Radar, Map as MapIcon, PanelsTopLeft, Bookmark, SlidersHorizontal, Search, X, ChevronLeft, Plane } from 'lucide';
 
-const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=15000, tracks=new Map();
+const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=15000, tracks=new globalThis.Map();
 let aircraft=[], lastFetch=0, timer=null;
 let state={view:'radar',selected:null,search:'',maxAlt:50000,minAlt:0,range:20,mapRange:80,showTrails:true,showLabels:true,onlySaved:false,detail:false,feed:'CONNECTING',message:''};
 const app=document.querySelector('#app');
@@ -76,11 +76,11 @@ function filtersPanel(){return `<div class="drawer" id="drawer"><div class="draw
  <label>Minimum altitude <span>${state.minAlt.toLocaleString()} ft</span><input id="minAlt" type="range" min="0" max="40000" step="1000" value="${state.minAlt}"></label>
  <label>Maximum altitude <span>${state.maxAlt.toLocaleString()} ft</span><input id="maxAlt" type="range" min="5000" max="50000" step="1000" value="${state.maxAlt}"></label>
  <label class="toggle"><input id="trails" type="checkbox" ${state.showTrails?'checked':''}> Trails</label><label class="toggle"><input id="labels" type="checkbox" ${state.showLabels?'checked':''}> Data labels</label><label class="toggle"><input id="onlySaved" type="checkbox" ${state.onlySaved?'checked':''}> Saved aircraft only</label><button class="reset" id="resetFilters">RESET FILTERS</button></div>`}
-function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.3 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
+function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.4 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
  <div class="toolbar"><div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registration..."></div><button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button></div>
  <div class="content view-${state.view}">${state.view==='radar'?radarView():state.view==='map'?mapView():cardsView()}${details(a)}</div>
  <nav><button data-view="radar" class="${state.view==='radar'?'active':''}"><i data-lucide="radar"></i><span>RADAR</span></button><button data-view="map" class="${state.view==='map'?'active':''}"><i data-lucide="map"></i><span>MAP</span></button><button data-view="cards" class="${state.view==='cards'?'active':''}"><i data-lucide="panels-top-left"></i><span>CARDS</span></button><button id="saved"><i data-lucide="bookmark"></i><span>SAVED</span></button></nav>${filtersPanel()}</main>`;
- createIcons({icons:{Radar,Map,PanelsTopLeft,Bookmark,SlidersHorizontal,Search,X,ChevronLeft,Plane}});bind();}
+ createIcons({icons:{Radar,Map:MapIcon,PanelsTopLeft,Bookmark,SlidersHorizontal,Search,X,ChevronLeft,Plane}});bind();}
 function bind(){
  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.detail=false;render()});
  document.querySelectorAll('[data-id]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-save]'))return;state.selected=el.dataset.id;state.detail=true;render()});

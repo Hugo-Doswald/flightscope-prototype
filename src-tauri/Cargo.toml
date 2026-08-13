@@ -1,6 +1,6 @@
 [package]
 name = "flightscope"
-version = "0.2.3"
+version = "0.2.4"
 description = "FlightScope aircraft tracking prototype"
 authors = ["CAF4U"]
 edition = "2021"
