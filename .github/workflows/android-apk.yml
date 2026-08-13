@@ -1,0 +1,60 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - "index.html"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK/NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;28.0.13004108"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.0.13004108" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Initialize Android project
+        run: npm run tauri android init -- --ci
+
+      - name: Build universal debug APK
+        run: npm run tauri android build -- --apk --debug --target aarch64
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          find src-tauri/gen/android -type f -name "*.apk" -print -exec cp {} artifacts/FlightScope-v0.2-debug.apk \; | head -n 1
+          test -f artifacts/FlightScope-v0.2-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FlightScope-v0.2-APK
+          path: artifacts/FlightScope-v0.2-debug.apk
+          if-no-files-found: error
