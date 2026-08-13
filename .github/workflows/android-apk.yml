@@ -50,11 +50,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          find src-tauri/gen/android -type f -name "*.apk" -print -exec cp {} artifacts/FlightScope-v0.2-debug.apk \; | head -n 1
-          test -f artifacts/FlightScope-v0.2-debug.apk
+          find src-tauri/gen/android -type f -name "*.apk" -print -exec cp {} artifacts/FlightScope-v0.2.2-debug.apk \; | head -n 1
+          test -f artifacts/FlightScope-v0.2.2-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FlightScope-v0.2-APK
-          path: artifacts/FlightScope-v0.2-debug.apk
+          name: FlightScope-v0.2.2-APK
+          path: artifacts/FlightScope-v0.2.2-debug.apk
           if-no-files-found: error

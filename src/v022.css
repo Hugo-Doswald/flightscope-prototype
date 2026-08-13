@@ -1,0 +1,17 @@
+/* V0.2.2 fixes */
+.cards-grid{height:100%!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding-bottom:calc(28px + env(safe-area-inset-bottom,0px))!important}
+.detail{overflow-y:auto!important;touch-action:pan-y}
+.map-stage{position:relative;overflow:hidden}
+.map-scene{position:absolute;inset:0}
+.map-range{position:absolute;z-index:12;top:16px;left:18px;color:#73b486;font-size:10px;letter-spacing:1px}
+.map-controls{position:absolute;z-index:12;top:46px;left:16px;display:grid;gap:6px}
+.map-controls button{width:40px;height:40px;border:1px solid #2d6b40;border-radius:9px;background:#0a1c12;color:#85eaa0;font-size:22px}
+.map-plane{transform:translate(-50%,-50%)}
+.live.error{color:#ff9c7e}.live.error i{background:#ff795d;box-shadow:0 0 9px #ff795d}
+.feed-message{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:9px;color:#91ad99;background:#07100bd9;border:1px solid #1b472b;border-radius:12px;padding:5px 9px;z-index:8}
+@media(orientation:landscape){
+ .shell{padding-left:max(16px,env(safe-area-inset-left,0px))!important;padding-right:max(16px,env(safe-area-inset-right,0px))!important}
+ .toolbar{padding-left:max(14px,env(safe-area-inset-left,0px))!important}
+ nav{padding-right:max(14px,env(safe-area-inset-right,0px))!important}
+ .drawer{right:max(20px,env(safe-area-inset-right,0px))!important;top:max(12px,env(safe-area-inset-top,0px))!important;bottom:max(12px,env(safe-area-inset-bottom,0px))!important;border-radius:14px;border:1px solid #225132}
+}

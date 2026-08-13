@@ -1,183 +1,98 @@
-﻿import './style.css';
-import { createIcons, Radar, Map, PanelsTopLeft, Bookmark, SlidersHorizontal, Plane, Search, X, ChevronLeft, Settings, Star, Route, Gauge, Navigation, Clock3 } from 'lucide';
+import './style.css';
+import './v022.css';
+import { invoke } from '@tauri-apps/api/core';
+import { createIcons, Radar, Map, PanelsTopLeft, Bookmark, SlidersHorizontal, Search, X, ChevronLeft, Plane } from 'lucide';
 
-const aircraft = [
-  { id:'G-EUOE', call:'BAW2DP', flight:'BA272', type:'A388', model:'Airbus A380-841', airline:'British Airways', lat:50.78, lon:-2.10, hdg:74, alt:35100, speed:493, vr:0, from:'LHR', to:'LAX', reg:'G-XLEH', squawk:'5271', dist:42, trail:[[12,78],[18,74],[24,70],[30,65],[37,61]], saved:true },
-  { id:'G-TTNA', call:'BAW7LC', flight:'BA783', type:'A20N', model:'Airbus A320neo', airline:'British Airways', lat:50.67, lon:-3.03, hdg:251, alt:11400, speed:319, vr:-1450, from:'LHR', to:'EXT', reg:'G-TTNA', squawk:'7732', dist:18, trail:[[79,24],[76,30],[72,37],[68,44],[63,51]], saved:false },
-  { id:'EI-DCL', call:'RYR6AM', flight:'FR4702', type:'B738', model:'Boeing 737-800', airline:'Ryanair', lat:50.47, lon:-3.46, hdg:185, alt:6200, speed:244, vr:-900, from:'DUB', to:'EXT', reg:'EI-DCL', squawk:'6124', dist:11, trail:[[50,15],[50,23],[49,31],[48,40],[47,50]], saved:true },
-  { id:'N785AN', call:'AAL87', flight:'AA87', type:'B77W', model:'Boeing 777-323ER', airline:'American Airlines', lat:51.04, lon:-2.42, hdg:276, alt:36000, speed:507, vr:0, from:'LHR', to:'ORD', reg:'N785AN', squawk:'2145', dist:55, trail:[[84,69],[78,66],[71,63],[64,61],[58,58]], saved:false },
-  { id:'G-JZHG', call:'EXS41K', flight:'LS1205', type:'B738', model:'Boeing 737-8MG', airline:'Jet2', lat:50.92, lon:-3.36, hdg:161, alt:18900, speed:374, vr:1100, from:'BRS', to:'TFS', reg:'G-JZHG', squawk:'3620', dist:31, trail:[[33,21],[36,28],[39,35],[41,42],[44,48]], saved:false },
-  { id:'PH-BHL', call:'KLM1050', flight:'KL1050', type:'B789', model:'Boeing 787-9', airline:'KLM', lat:50.88, lon:-2.74, hdg:92, alt:27800, speed:441, vr:600, from:'AMS', to:'SFO', reg:'PH-BHL', squawk:'4212', dist:37, trail:[[25,58],[32,57],[39,56],[47,56],[54,55]], saved:false },
-  { id:'D-AIXJ', call:'DLH4C', flight:'LH421', type:'A359', model:'Airbus A350-941', airline:'Lufthansa', lat:50.57, lon:-2.66, hdg:58, alt:39000, speed:512, vr:0, from:'FRA', to:'BOS', reg:'D-AIXJ', squawk:'1107', dist:49, trail:[[20,80],[27,74],[34,69],[41,64],[48,59]], saved:true },
-  { id:'G-LSAK', call:'EXS9NU', flight:'LS515', type:'B752', model:'Boeing 757-21B', airline:'Jet2', lat:50.39, lon:-3.02, hdg:312, alt:9400, speed:301, vr:1800, from:'EXT', to:'PMI', reg:'G-LSAK', squawk:'5066', dist:15, trail:[[62,84],[59,77],[57,70],[55,64],[53,59]], saved:false }
-];
+const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=15000, tracks=new Map();
+let aircraft=[], lastFetch=0, timer=null;
+let state={view:'radar',selected:null,search:'',maxAlt:50000,minAlt:0,range:20,mapRange:80,showTrails:true,showLabels:true,onlySaved:false,detail:false,feed:'CONNECTING',message:''};
+const app=document.querySelector('#app');
+const n=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
+const s=(v,d='')=>typeof v==='string'&&v.trim()?v.trim():d;
+const label=a=>a.flightNumber||a.call||a.reg||a.id.toUpperCase();
 
-let state = {
-  view:'radar',
-  selected: aircraft[1].id,
-  search:'',
-  maxAlt:45000,
-  minAlt:0,
-  range:80,
-  showTrails:true,
-  showLabels:true,
-  onlySaved:false,
-  detail:false
-};
-
-const app = document.querySelector('#app');
-const SCOPE_CENTER = { lat: 50.7344, lon: -3.4139 };
-function scopePoint(a){
-  const latNm=(a.lat-SCOPE_CENTER.lat)*60;
-  const lonNm=(a.lon-SCOPE_CENTER.lon)*60*Math.cos(SCOPE_CENTER.lat*Math.PI/180);
-  return {x:50+(lonNm/state.range)*43,y:50-(latNm/state.range)*43,distance:Math.hypot(latNm,lonNm)};
+function normalise(r){
+ const alt=r.alt_baro==='ground'?0:(r.alt_baro??r.alt_geom);
+ return {id:s(r.hex,'unknown'),call:s(r.flight),flightNumber:null,type:s(r.t,'----'),model:s(r.desc,s(r.t,'Unknown aircraft')),
+  airline:s(r.ownOp,'Live ADS-B aircraft'),lat:n(r.lat,NaN),lon:n(r.lon,NaN),hdg:n(r.track),alt:n(alt),speed:n(r.gs),
+  vr:n(r.baro_rate??r.geom_rate),from:'--',to:'--',reg:s(r.r,s(r.hex,'----').toUpperCase()),squawk:s(r.squawk,'----'),saved:false};
 }
-function trailPoints(a){
-  const p=scopePoint(a), rad=a.hdg*Math.PI/180;
-  const trailNm=Math.min(state.range*0.42,a.speed*5/60), pts=[];
-  for(let i=6;i>=0;i--){
-    const nm=trailNm*(i/6);
-    const dx=Math.sin(rad)*(nm/state.range)*43;
-    const dy=-Math.cos(rad)*(nm/state.range)*43;
-    pts.push(`${(p.x-dx).toFixed(2)},${(p.y-dy).toFixed(2)}`);
-  }
-  return pts.join(' ');
+function updateTracks(rows){
+ const active=new Set();
+ rows.forEach(a=>{active.add(a.id);const h=tracks.get(a.id)||[],p=h[h.length-1];
+  if(!p||Math.abs(p.lat-a.lat)>.00005||Math.abs(p.lon-a.lon)>.00005){h.push({lat:a.lat,lon:a.lon});while(h.length>12)h.shift();tracks.set(a.id,h);}
+ });
+ for(const k of tracks.keys())if(!active.has(k))tracks.delete(k);
 }
-
-function fmtVr(v){ return v===0 ? 'LEVEL' : `${v>0?'â†‘':'â†“'} ${Math.abs(v).toLocaleString()} fpm`; }
-function statusClass(v){ return v>100 ? 'climb' : v<-100 ? 'desc' : 'level'; }
-
-function filtered(){
-  const q=state.search.trim().toLowerCase();
-  return aircraft.filter(a =>
-    a.alt>=state.minAlt && a.alt<=state.maxAlt &&
-    (!state.onlySaved || a.saved) &&
-    (!q || [a.call,a.flight,a.reg,a.type,a.airline,a.from,a.to].join(' ').toLowerCase().includes(q))
-  );
+async function refresh(force=false){
+ const now=Date.now();if(!force&&now-lastFetch<1400)return;lastFetch=now;state.feed=aircraft.length?'LIVE ADS-B':'CONNECTING';render();
+ try{
+  const radius=Math.min(250,Math.max(state.range,state.mapRange));
+  const p=await invoke('fetch_live_aircraft',{lat:CENTER.lat,lon:CENTER.lon,radius});
+  aircraft=(Array.isArray(p?.ac)?p.ac:[]).map(normalise).filter(a=>Number.isFinite(a.lat)&&Number.isFinite(a.lon));
+  updateTracks(aircraft);
+  if(!state.selected||!aircraft.some(a=>a.id===state.selected)){state.selected=aircraft[0]?.id||null;state.detail=false;}
+  state.feed='LIVE ADS-B';state.message=aircraft.length?'':'No aircraft returned for this area';
+ }catch(e){state.feed='FEED ERROR';state.message=String(e);}
+ render();
 }
-function selected(){ return aircraft.find(a=>a.id===state.selected) || aircraft[0]; }
+function queueRefresh(){clearTimeout(timer);timer=setTimeout(()=>refresh(),1200);}
+function point(a,range){const lat=(a.lat-CENTER.lat)*60,lon=(a.lon-CENTER.lon)*60*Math.cos(CENTER.lat*Math.PI/180);return{x:50+(lon/range)*43,y:50-(lat/range)*43,distance:Math.hypot(lat,lon)}}
+function filtered(){const q=state.search.trim().toLowerCase();return aircraft.filter(a=>a.alt>=state.minAlt&&a.alt<=state.maxAlt&&(!state.onlySaved||a.saved)&&(!q||[label(a),a.call,a.reg,a.type,a.airline].join(' ').toLowerCase().includes(q)))}
+function selected(){return aircraft.find(a=>a.id===state.selected)||null}
+function trail(a){const h=tracks.get(a.id)||[];if(h.length<2)return'';const pts=h.map(p=>point(p,state.range)).filter(p=>p.distance<=state.range*1.1).map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`);return pts.length<2?'':`<svg class="trail" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${pts.join(' ')}"/></svg>`}
+function fmtVr(v){return Math.abs(v)<100?'LEVEL':`${v>0?'UP':'DOWN'} ${Math.abs(Math.round(v)).toLocaleString()} fpm`}
+function cls(v){return v>100?'climb':v<-100?'desc':'level'}
 
 function radarView(){
-  const rows = filtered();
-  return `
-  <section class="radar-stage">
-    <div class="range-badge">${state.range} NM</div>
-    <div class="radar-grid">
-      <div class="scope-ring r1"></div><div class="scope-ring r2"></div><div class="scope-ring r3"></div><div class="scope-ring r4"></div>
-      <div class="axis h"></div><div class="axis v"></div>
-      <div class="sweep"></div>
-      <div class="airport-marker" style="left:50%;top:50%"><span>+</span><b>EXT</b></div>
-      ${rows.map((a,i)=>{
-        const p = scopePoint(a);
-        if (p.distance > state.range * 1.05) return '';
-        const trail = state.showTrails ? `<svg class="trail" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${trailPoints(a)}"/></svg>`:'';
-        return `${trail}<button class="target ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${p.x}%;top:${p.y}%">
-          <span class="plane-glyph" style="transform:rotate(${a.hdg}deg)">â–²</span>
-          ${state.showLabels?`<span class="target-label"><strong>${a.flight}</strong><small>${a.call}</small><small>${Math.round(a.alt/100)} ${a.type}</small><small>${a.speed}kt ${a.hdg}Â°</small></span>`:''}
-        </button>`;
-      }).join('')}
-      <div class="scope-meta left">50Â°43'N<br/>003Â°28'W</div>
-      <div class="scope-meta right">QNH 1016<br/>UTC 08:18</div>
-    </div>
-  </section>`;
+ const rows=filtered().map(a=>({a,p:point(a,state.range)})).filter(x=>x.p.distance<=state.range*1.05).sort((x,y)=>x.a.id===state.selected?-1:y.a.id===state.selected?1:x.p.distance-y.p.distance);
+ const limit=state.range<=20?28:state.range<=40?22:state.range<=80?14:10,compact=state.range>40;
+ return `<section class="radar-stage"><div class="range-badge">${state.range} NM</div><div class="radar-grid">
+ <div class="scope-ring r1"></div><div class="scope-ring r2"></div><div class="scope-ring r3"></div><div class="scope-ring r4"></div><div class="sweep"></div>
+ <div class="airport-marker" style="left:50%;top:50%"><span>+</span><b>${CENTER.code}</b></div>
+ ${rows.map((x,i)=>{const a=x.a,p=x.p,show=state.showLabels&&(i<limit||a.id===state.selected),detail=!compact||a.id===state.selected;
+ return `${state.showTrails?trail(a):''}<button class="target ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${p.x}%;top:${p.y}%"><span class="plane-glyph" style="transform:rotate(${a.hdg}deg)">&#9650;</span>${show?`<span class="target-label"><strong>${label(a)}</strong>${detail&&a.call&&a.call!==label(a)?`<small>${a.call}</small>`:''}<small>${Math.round(a.alt/100)} ${a.type}</small>${detail?`<small>${Math.round(a.speed)}kt ${Math.round(a.hdg)}&deg;</small>`:''}</span>`:''}</button>`}).join('')}
+ <div class="scope-meta left">50&deg;43'N<br>003&deg;25'W</div><div class="scope-meta right">LIVE ADS-B<br>${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>
+ ${state.message?`<div class="feed-message">${state.message}</div>`:''}</section>`;
 }
-
 function mapView(){
-  return `<section class="map-stage">
-    <div class="map-ocean"></div>
-    <div class="land land-a"></div><div class="land land-b"></div>
-    <div class="map-road road1"></div><div class="map-road road2"></div><div class="map-road road3"></div>
-    <div class="map-label exeter">EXETER</div><div class="map-label teignmouth">TEIGNMOUTH</div><div class="map-label torquay">TORQUAY</div>
-    ${filtered().map((a,i)=>`<button class="map-plane ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${15+(i*11)%72}%;top:${20+(i*19)%64}%"><span style="transform:rotate(${a.hdg}deg)">âœˆ</span><b>${a.flight}</b></button>`).join('')}
-  </section>`;
+ const rows=filtered().map(a=>({a,p:point(a,state.mapRange)})).filter(x=>x.p.distance<=state.mapRange*1.15);
+ return `<section class="map-stage"><div class="map-range">${state.mapRange} NM</div><div class="map-controls"><button id="mapIn">+</button><button id="mapOut">-</button></div>
+ <div class="map-scene"><div class="map-ocean"></div><div class="land land-a"></div><div class="land land-b"></div><div class="map-road road1"></div><div class="map-road road2"></div><div class="map-road road3"></div>
+ <div class="map-label exeter">EXETER</div><div class="map-label teignmouth">TEIGNMOUTH</div><div class="map-label torquay">TORQUAY</div>
+ ${rows.map(x=>`<button class="map-plane ${x.a.id===state.selected?'selected':''}" data-id="${x.a.id}" style="left:${x.p.x}%;top:${x.p.y}%"><span style="transform:rotate(${x.a.hdg}deg)">&#9992;</span><b>${label(x.a)}</b><small>${Math.round(x.a.alt).toLocaleString()} ft</small></button>`).join('')}</div></section>`;
 }
-
-function cardsView(){
-  return `<section class="cards-grid">${filtered().map(a=>`
-    <article class="trump ${a.id===state.selected?'selected':''}" data-id="${a.id}">
-      <div class="trump-head"><div><span>${a.airline}</span><h3>${a.flight}</h3><small>${a.call}</small></div><button class="star ${a.saved?'on':''}" data-save="${a.id}">â˜…</button></div>
-      <div class="route"><b>${a.from}</b><span>â†’</span><b>${a.to}</b></div>
-      <div class="silhouette">âœˆ</div>
-      <div class="stats"><span><small>ALT</small>${a.alt.toLocaleString()} ft</span><span><small>SPD</small>${a.speed} kt</span><span><small>HDG</small>${a.hdg}Â°</span></div>
-      <div class="trump-foot"><span>${a.type}</span><span>${a.reg}</span><span class="${statusClass(a.vr)}">${fmtVr(a.vr)}</span></div>
-    </article>`).join('')}</section>`;
-}
-
-function details(a){
-  return `<aside class="detail ${state.detail?'open':''}">
-    <div class="detail-top"><button id="closeDetail"><i data-lucide="chevron-left"></i></button><span>AIRCRAFT DETAIL</span><button class="star big ${a.saved?'on':''}" data-save="${a.id}">â˜…</button></div>
-    <div class="hero-plane"><div class="airline">${a.airline}</div><div class="hero-icon">âœˆ</div><h2>${a.call}</h2><p>${a.flight} Â· ${a.model}</p></div>
-    <div class="detail-route"><div><small>FROM</small><b>${a.from}</b></div><span>â”â”â”â” âœˆ â”â”â”â”</span><div><small>TO</small><b>${a.to}</b></div></div>
-    <div class="metric-grid">
-      <div><small>ALTITUDE</small><b>${a.alt.toLocaleString()}</b><em>ft</em></div>
-      <div><small>GROUND SPEED</small><b>${a.speed}</b><em>kt</em></div>
-      <div><small>HEADING</small><b>${a.hdg}Â°</b><em>magnetic</em></div>
-      <div><small>VERTICAL RATE</small><b>${a.vr===0?'0':a.vr.toLocaleString()}</b><em>ft/min</em></div>
-      <div><small>REGISTRATION</small><b>${a.reg}</b><em>${a.type}</em></div>
-      <div><small>SQUAWK</small><b>${a.squawk}</b><em>Mode A</em></div>
-    </div>
-    <div class="history"><h3>Recent trail</h3><div class="history-line"></div><p>Demo telemetry Â· ${a.dist} NM from scope centre</p></div>
-  </aside>`;
-}
-
-function filtersPanel(){
- return `<div class="drawer" id="drawer">
-   <div class="drawer-head"><b>Scope controls</b><button id="closeDrawer"><i data-lucide="x"></i></button></div>
-   <label>Radar range <span>${state.range} NM</span><input id="range" type="range" min="20" max="160" step="20" value="${state.range}"></label>
-   <label>Minimum altitude <span>${state.minAlt.toLocaleString()} ft</span><input id="minAlt" type="range" min="0" max="40000" step="1000" value="${state.minAlt}"></label>
-   <label>Maximum altitude <span>${state.maxAlt.toLocaleString()} ft</span><input id="maxAlt" type="range" min="5000" max="50000" step="1000" value="${state.maxAlt}"></label>
-   <label class="toggle"><input id="trails" type="checkbox" ${state.showTrails?'checked':''}><span></span> Trails</label>
-   <label class="toggle"><input id="labels" type="checkbox" ${state.showLabels?'checked':''}><span></span> Data labels</label>
-   <label class="toggle"><input id="onlySaved" type="checkbox" ${state.onlySaved?'checked':''}><span></span> Saved aircraft only</label>
-   <button class="reset" id="resetFilters">RESET FILTERS</button>
- </div>`;
-}
-
-function render(){
- const a=selected();
- app.innerHTML = `
- <main class="shell">
-   <header>
-     <div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2 Â· LIVE PROTOTYPE</span></div></div>
-     <div class="live"><i></i> DEMO FEED <b>${filtered().length}</b></div>
-   </header>
-   <div class="toolbar">
-     <div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registrationâ€¦"></div>
-     <button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button>
-   </div>
-   <div class="content">
-     ${state.view==='radar'?radarView():state.view==='map'?mapView():cardsView()}
-     ${details(a)}
-   </div>
-   <nav>
-     <button data-view="radar" class="${state.view==='radar'?'active':''}"><i data-lucide="radar"></i><span>RADAR</span></button>
-     <button data-view="map" class="${state.view==='map'?'active':''}"><i data-lucide="map"></i><span>MAP</span></button>
-     <button data-view="cards" class="${state.view==='cards'?'active':''}"><i data-lucide="panels-top-left"></i><span>CARDS</span></button>
-     <button id="saved"><i data-lucide="bookmark"></i><span>SAVED</span></button>
-   </nav>
-   ${filtersPanel()}
- </main>`;
- createIcons({icons:{Radar,Map,PanelsTopLeft,Bookmark,SlidersHorizontal,Plane,Search,X,ChevronLeft,Settings,Star,Route,Gauge,Navigation,Clock3}});
- bind();
-}
-
+function cardsView(){const r=filtered();return `<section class="cards-grid">${r.length?r.map(a=>`<article class="trump ${a.id===state.selected?'selected':''}" data-id="${a.id}">
+ <div class="trump-head"><div><span>${a.airline}</span><h3>${label(a)}</h3>${a.call&&a.call!==label(a)?`<small>${a.call}</small>`:''}</div><button class="star ${a.saved?'on':''}" data-save="${a.id}">&#9733;</button></div>
+ <div class="route"><b>${a.from}</b><span>&rarr;</span><b>${a.to}</b></div><div class="silhouette">&#9992;</div>
+ <div class="stats"><span><small>ALT</small>${Math.round(a.alt).toLocaleString()} ft</span><span><small>SPD</small>${Math.round(a.speed)} kt</span><span><small>HDG</small>${Math.round(a.hdg)}&deg;</span></div>
+ <div class="trump-foot"><span>${a.type}</span><span>${a.reg}</span><span class="${cls(a.vr)}">${fmtVr(a.vr)}</span></div></article>`).join(''):'<div class="empty-state">No aircraft match the current filters.</div>'}</section>`}
+function details(a){if(!a)return'';return `<aside class="detail ${state.detail?'open':''}"><div class="detail-top"><button id="closeDetail"><i data-lucide="chevron-left"></i></button><span>AIRCRAFT DETAIL</span><button class="star big ${a.saved?'on':''}" data-save="${a.id}">&#9733;</button></div>
+ <div class="hero-plane"><div class="airline">${a.airline}</div><div class="hero-icon">&#9992;</div><h2>${label(a)}</h2><p>${a.call||'No callsign'} &middot; ${a.model}</p></div>
+ <div class="detail-route"><div><small>FROM</small><b>${a.from}</b></div><span>--- &gt; ---</span><div><small>TO</small><b>${a.to}</b></div></div>
+ <div class="metric-grid"><div><small>ALTITUDE</small><b>${Math.round(a.alt).toLocaleString()}</b><em>ft</em></div><div><small>GROUND SPEED</small><b>${Math.round(a.speed)}</b><em>kt</em></div><div><small>HEADING</small><b>${Math.round(a.hdg)}&deg;</b><em>track</em></div><div><small>VERTICAL RATE</small><b>${Math.round(a.vr).toLocaleString()}</b><em>ft/min</em></div><div><small>REGISTRATION</small><b>${a.reg}</b><em>${a.type}</em></div><div><small>SQUAWK</small><b>${a.squawk}</b><em>Mode A</em></div></div>
+ <div class="history"><h3>Observed trail</h3><p>${(tracks.get(a.id)||[]).length} live position samples stored this session.</p></div></aside>`}
+function filtersPanel(){return `<div class="drawer" id="drawer"><div class="drawer-head"><b>Scope controls</b><button id="closeDrawer"><i data-lucide="x"></i></button></div>
+ <label>Radar range <span>${state.range} NM</span><input id="range" type="range" min="20" max="160" step="20" value="${state.range}"></label>
+ <label>Minimum altitude <span>${state.minAlt.toLocaleString()} ft</span><input id="minAlt" type="range" min="0" max="40000" step="1000" value="${state.minAlt}"></label>
+ <label>Maximum altitude <span>${state.maxAlt.toLocaleString()} ft</span><input id="maxAlt" type="range" min="5000" max="50000" step="1000" value="${state.maxAlt}"></label>
+ <label class="toggle"><input id="trails" type="checkbox" ${state.showTrails?'checked':''}> Trails</label><label class="toggle"><input id="labels" type="checkbox" ${state.showLabels?'checked':''}> Data labels</label><label class="toggle"><input id="onlySaved" type="checkbox" ${state.onlySaved?'checked':''}> Saved aircraft only</label><button class="reset" id="resetFilters">RESET FILTERS</button></div>`}
+function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.2 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
+ <div class="toolbar"><div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registration..."></div><button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button></div>
+ <div class="content view-${state.view}">${state.view==='radar'?radarView():state.view==='map'?mapView():cardsView()}${details(a)}</div>
+ <nav><button data-view="radar" class="${state.view==='radar'?'active':''}"><i data-lucide="radar"></i><span>RADAR</span></button><button data-view="map" class="${state.view==='map'?'active':''}"><i data-lucide="map"></i><span>MAP</span></button><button data-view="cards" class="${state.view==='cards'?'active':''}"><i data-lucide="panels-top-left"></i><span>CARDS</span></button><button id="saved"><i data-lucide="bookmark"></i><span>SAVED</span></button></nav>${filtersPanel()}</main>`;
+ createIcons({icons:{Radar,Map,PanelsTopLeft,Bookmark,SlidersHorizontal,Search,X,ChevronLeft,Plane}});bind();}
 function bind(){
- document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.detail=false;render();});
- document.querySelectorAll('[data-id]').forEach(el=>el.onclick=(e)=>{ if(e.target.closest('[data-save]')) return; state.selected=el.dataset.id; state.detail=true; render(); });
- document.querySelectorAll('[data-save]').forEach(b=>b.onclick=(e)=>{e.stopPropagation(); const a=aircraft.find(x=>x.id===b.dataset.save); a.saved=!a.saved; render();});
- document.querySelector('#search').oninput=e=>{state.search=e.target.value; state.detail=false; render(); setTimeout(()=>{const x=document.querySelector('#search'); if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},0)};
- document.querySelector('#filters').onclick=()=>document.querySelector('#drawer').classList.add('open');
- document.querySelector('#closeDrawer').onclick=()=>document.querySelector('#drawer').classList.remove('open');
- document.querySelector('#closeDetail').onclick=()=>{state.detail=false;render();};
- document.querySelector('#saved').onclick=()=>{state.onlySaved=!state.onlySaved;state.view='cards';state.detail=false;render();};
+ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.detail=false;render()});
+ document.querySelectorAll('[data-id]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-save]'))return;state.selected=el.dataset.id;state.detail=true;render()});
+ document.querySelectorAll('[data-save]').forEach(b=>b.onclick=e=>{e.stopPropagation();const a=aircraft.find(x=>x.id===b.dataset.save);if(a)a.saved=!a.saved;render()});
+ const q=document.querySelector('#search');if(q)q.oninput=e=>{state.search=e.target.value;state.detail=false;render();setTimeout(()=>{const x=document.querySelector('#search');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},0)};
+ document.querySelector('#filters').onclick=()=>document.querySelector('#drawer').classList.add('open');document.querySelector('#closeDrawer').onclick=()=>document.querySelector('#drawer').classList.remove('open');
+ const cd=document.querySelector('#closeDetail');if(cd)cd.onclick=()=>{state.detail=false;render()};document.querySelector('#saved').onclick=()=>{state.onlySaved=!state.onlySaved;state.view='cards';state.detail=false;render()};
  const re=()=>{render();setTimeout(()=>document.querySelector('#drawer')?.classList.add('open'),0)};
- document.querySelector('#range').onchange=e=>{state.range=+e.target.value;re()};
- document.querySelector('#minAlt').onchange=e=>{state.minAlt=Math.min(+e.target.value,state.maxAlt-1000);re()};
- document.querySelector('#maxAlt').onchange=e=>{state.maxAlt=Math.max(+e.target.value,state.minAlt+1000);re()};
- document.querySelector('#trails').onchange=e=>{state.showTrails=e.target.checked;re()};
- document.querySelector('#labels').onchange=e=>{state.showLabels=e.target.checked;re()};
- document.querySelector('#onlySaved').onchange=e=>{state.onlySaved=e.target.checked;re()};
- document.querySelector('#resetFilters').onclick=()=>{state.range=80;state.minAlt=0;state.maxAlt=45000;state.showTrails=true;state.showLabels=true;state.onlySaved=false;re()};
+ document.querySelector('#range').onchange=e=>{state.range=Number(e.target.value);re();queueRefresh()};document.querySelector('#minAlt').onchange=e=>{state.minAlt=Math.min(Number(e.target.value),state.maxAlt-1000);re()};document.querySelector('#maxAlt').onchange=e=>{state.maxAlt=Math.max(Number(e.target.value),state.minAlt+1000);re()};
+ document.querySelector('#trails').onchange=e=>{state.showTrails=e.target.checked;re()};document.querySelector('#labels').onchange=e=>{state.showLabels=e.target.checked;re()};document.querySelector('#onlySaved').onchange=e=>{state.onlySaved=e.target.checked;re()};
+ document.querySelector('#resetFilters').onclick=()=>{state.range=20;state.minAlt=0;state.maxAlt=50000;state.showTrails=true;state.showLabels=true;state.onlySaved=false;re();queueRefresh()};
+ const mi=document.querySelector('#mapIn'),mo=document.querySelector('#mapOut');if(mi)mi.onclick=()=>{state.mapRange=Math.max(20,state.mapRange/2);render();queueRefresh()};if(mo)mo.onclick=()=>{state.mapRange=Math.min(250,state.mapRange*2);render();queueRefresh()};
 }
-render();
-
+render();refresh(true);setInterval(()=>refresh(),REFRESH);
