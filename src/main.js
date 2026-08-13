@@ -2,7 +2,7 @@ import './style.css';
 import './v022.css';
 import { createIcons, Radar, Map as MapIcon, PanelsTopLeft, Bookmark, SlidersHorizontal, Search, X, ChevronLeft, Plane } from 'lucide';
 
-const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=15000, tracks=new globalThis.Map();
+const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=60000, tracks=new globalThis.Map(), enrichmentCache=new globalThis.Map();
 let aircraft=[], lastFetch=0, timer=null;
 let state={view:'radar',selected:null,search:'',maxAlt:50000,minAlt:0,range:20,mapRange:80,showTrails:true,showLabels:true,onlySaved:false,detail:false,feed:'CONNECTING',message:''};
 const app=document.querySelector('#app');
@@ -14,7 +14,7 @@ function normalise(r){
  const alt=r.alt_baro==='ground'?0:(r.alt_baro??r.alt_geom);
  return {id:s(r.hex,'unknown'),call:s(r.flight),flightNumber:null,type:s(r.t,'----'),model:s(r.desc,s(r.t,'Unknown aircraft')),
   airline:s(r.ownOp,'Live ADS-B aircraft'),lat:n(r.lat,NaN),lon:n(r.lon,NaN),hdg:n(r.track),alt:n(alt),speed:n(r.gs),
-  vr:n(r.baro_rate??r.geom_rate),from:'--',to:'--',reg:s(r.r,s(r.hex,'----').toUpperCase()),squawk:s(r.squawk,'----'),saved:false};
+  vr:n(r.baro_rate??r.geom_rate),from:s(r.from,'--'),to:s(r.to,'--'),reg:s(r.r,s(r.hex,'----').toUpperCase()),squawk:s(r.squawk,'----'),saved:false};
 }
 function updateTracks(rows){
  const active=new Set();
@@ -30,8 +30,29 @@ async function refresh(force=false){
   const tauri=await import('@tauri-apps/api/core'); if(!tauri||typeof tauri.invoke!=='function') throw new Error('Tauri IPC is unavailable'); const p=await tauri.invoke('fetch_live_aircraft',{lat:CENTER.lat,lon:CENTER.lon,radius});
   aircraft=(Array.isArray(p?.ac)?p.ac:[]).map(normalise).filter(a=>Number.isFinite(a.lat)&&Number.isFinite(a.lon));
   updateTracks(aircraft);
+  try {
+    const misses=aircraft.filter(a=>!enrichmentCache.has(a.id)).slice(0,40).map(a=>({hex:a.id,callsign:a.call||""}));
+    if(misses.length){
+      const enriched=await tauri.invoke('enrich_aircraft_batch',{items:misses});
+      for(const e of enriched||[]) enrichmentCache.set(e.hex,e);
+    }
+    aircraft=aircraft.map(a=>{
+      const e=enrichmentCache.get(a.id);
+      if(!e)return a;
+      return {...a,
+        reg:e.registration||a.reg,
+        type:e.type_code||a.type,
+        model:e.type_name||a.model,
+        airline:e.operator||a.airline,
+        from:e.from||a.from,
+        to:e.to||a.to
+      };
+    });
+  } catch(enrichError) {
+    console.warn('HexDB enrichment unavailable',enrichError);
+  }
   if(!state.selected||!aircraft.some(a=>a.id===state.selected)){state.selected=aircraft[0]?.id||null;state.detail=false;}
-  state.feed='LIVE ADS-B';state.message=aircraft.length?'':'No aircraft returned for this area';
+  state.feed='LIVE OPEN SKY';state.message=p?.message||(aircraft.length?'':'No aircraft returned for this area');
  }catch(e){state.feed='FEED ERROR';state.message=String(e);}
  render();
 }
@@ -51,7 +72,7 @@ function radarView(){
  <div class="airport-marker" style="left:50%;top:50%"><span>+</span><b>${CENTER.code}</b></div>
  ${rows.map((x,i)=>{const a=x.a,p=x.p,show=state.showLabels&&(i<limit||a.id===state.selected),detail=!compact||a.id===state.selected;
  return `${state.showTrails?trail(a):''}<button class="target ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${p.x}%;top:${p.y}%"><span class="plane-glyph" style="transform:rotate(${a.hdg}deg)">&#9650;</span>${show?`<span class="target-label"><strong>${label(a)}</strong>${detail&&a.call&&a.call!==label(a)?`<small>${a.call}</small>`:''}<small>${Math.round(a.alt/100)} ${a.type}</small>${detail?`<small>${Math.round(a.speed)}kt ${Math.round(a.hdg)}&deg;</small>`:''}</span>`:''}</button>`}).join('')}
- <div class="scope-meta left">50&deg;43'N<br>003&deg;25'W</div><div class="scope-meta right">LIVE ADS-B<br>${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>
+ <div class="scope-meta left">50&deg;43'N<br>003&deg;25'W</div><div class="scope-meta right">OPEN SKY<br>${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>
  ${state.message?`<div class="feed-message">${state.message}</div>`:''}</section>`;
 }
 function mapView(){
@@ -76,7 +97,7 @@ function filtersPanel(){return `<div class="drawer" id="drawer"><div class="draw
  <label>Minimum altitude <span>${state.minAlt.toLocaleString()} ft</span><input id="minAlt" type="range" min="0" max="40000" step="1000" value="${state.minAlt}"></label>
  <label>Maximum altitude <span>${state.maxAlt.toLocaleString()} ft</span><input id="maxAlt" type="range" min="5000" max="50000" step="1000" value="${state.maxAlt}"></label>
  <label class="toggle"><input id="trails" type="checkbox" ${state.showTrails?'checked':''}> Trails</label><label class="toggle"><input id="labels" type="checkbox" ${state.showLabels?'checked':''}> Data labels</label><label class="toggle"><input id="onlySaved" type="checkbox" ${state.onlySaved?'checked':''}> Saved aircraft only</label><button class="reset" id="resetFilters">RESET FILTERS</button></div>`}
-function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.4 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
+function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.5 &middot; FREE LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
  <div class="toolbar"><div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registration..."></div><button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button></div>
  <div class="content view-${state.view}">${state.view==='radar'?radarView():state.view==='map'?mapView():cardsView()}${details(a)}</div>
  <nav><button data-view="radar" class="${state.view==='radar'?'active':''}"><i data-lucide="radar"></i><span>RADAR</span></button><button data-view="map" class="${state.view==='map'?'active':''}"><i data-lucide="map"></i><span>MAP</span></button><button data-view="cards" class="${state.view==='cards'?'active':''}"><i data-lucide="panels-top-left"></i><span>CARDS</span></button><button id="saved"><i data-lucide="bookmark"></i><span>SAVED</span></button></nav>${filtersPanel()}</main>`;
