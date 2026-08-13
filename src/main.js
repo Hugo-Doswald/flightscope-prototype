@@ -1,4 +1,4 @@
-import './style.css';
+﻿import './style.css';
 import { createIcons, Radar, Map, PanelsTopLeft, Bookmark, SlidersHorizontal, Plane, Search, X, ChevronLeft, Settings, Star, Route, Gauge, Navigation, Clock3 } from 'lucide';
 
 const aircraft = [
@@ -26,8 +26,25 @@ let state = {
 };
 
 const app = document.querySelector('#app');
+const SCOPE_CENTER = { lat: 50.7344, lon: -3.4139 };
+function scopePoint(a){
+  const latNm=(a.lat-SCOPE_CENTER.lat)*60;
+  const lonNm=(a.lon-SCOPE_CENTER.lon)*60*Math.cos(SCOPE_CENTER.lat*Math.PI/180);
+  return {x:50+(lonNm/state.range)*43,y:50-(latNm/state.range)*43,distance:Math.hypot(latNm,lonNm)};
+}
+function trailPoints(a){
+  const p=scopePoint(a), rad=a.hdg*Math.PI/180;
+  const trailNm=Math.min(state.range*0.42,a.speed*5/60), pts=[];
+  for(let i=6;i>=0;i--){
+    const nm=trailNm*(i/6);
+    const dx=Math.sin(rad)*(nm/state.range)*43;
+    const dy=-Math.cos(rad)*(nm/state.range)*43;
+    pts.push(`${(p.x-dx).toFixed(2)},${(p.y-dy).toFixed(2)}`);
+  }
+  return pts.join(' ');
+}
 
-function fmtVr(v){ return v===0 ? 'LEVEL' : `${v>0?'↑':'↓'} ${Math.abs(v).toLocaleString()} fpm`; }
+function fmtVr(v){ return v===0 ? 'LEVEL' : `${v>0?'â†‘':'â†“'} ${Math.abs(v).toLocaleString()} fpm`; }
 function statusClass(v){ return v>100 ? 'climb' : v<-100 ? 'desc' : 'level'; }
 
 function filtered(){
@@ -51,15 +68,15 @@ function radarView(){
       <div class="sweep"></div>
       <div class="airport-marker" style="left:50%;top:50%"><span>+</span><b>EXT</b></div>
       ${rows.map((a,i)=>{
-        const x = 12 + ((i*17+11)%76);
-        const y = 16 + ((i*23+9)%67);
-        const trail = state.showTrails ? `<svg class="trail" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${a.trail.map(p=>p.join(',')).join(' ')}"/></svg>`:'';
-        return `${trail}<button class="target ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${x}%;top:${y}%">
-          <span class="plane-glyph" style="transform:rotate(${a.hdg}deg)">▲</span>
-          ${state.showLabels?`<span class="target-label"><strong>${a.call}</strong><small>${Math.round(a.alt/100)} ${a.type}</small><small>${a.speed}kt ${a.hdg}°</small></span>`:''}
+        const p = scopePoint(a);
+        if (p.distance > state.range * 1.05) return '';
+        const trail = state.showTrails ? `<svg class="trail" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${trailPoints(a)}"/></svg>`:'';
+        return `${trail}<button class="target ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${p.x}%;top:${p.y}%">
+          <span class="plane-glyph" style="transform:rotate(${a.hdg}deg)">â–²</span>
+          ${state.showLabels?`<span class="target-label"><strong>${a.flight}</strong><small>${a.call}</small><small>${Math.round(a.alt/100)} ${a.type}</small><small>${a.speed}kt ${a.hdg}Â°</small></span>`:''}
         </button>`;
       }).join('')}
-      <div class="scope-meta left">50°43'N<br/>003°28'W</div>
+      <div class="scope-meta left">50Â°43'N<br/>003Â°28'W</div>
       <div class="scope-meta right">QNH 1016<br/>UTC 08:18</div>
     </div>
   </section>`;
@@ -71,35 +88,35 @@ function mapView(){
     <div class="land land-a"></div><div class="land land-b"></div>
     <div class="map-road road1"></div><div class="map-road road2"></div><div class="map-road road3"></div>
     <div class="map-label exeter">EXETER</div><div class="map-label teignmouth">TEIGNMOUTH</div><div class="map-label torquay">TORQUAY</div>
-    ${filtered().map((a,i)=>`<button class="map-plane ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${15+(i*11)%72}%;top:${20+(i*19)%64}%"><span style="transform:rotate(${a.hdg}deg)">✈</span><b>${a.call}</b></button>`).join('')}
+    ${filtered().map((a,i)=>`<button class="map-plane ${a.id===state.selected?'selected':''}" data-id="${a.id}" style="left:${15+(i*11)%72}%;top:${20+(i*19)%64}%"><span style="transform:rotate(${a.hdg}deg)">âœˆ</span><b>${a.flight}</b></button>`).join('')}
   </section>`;
 }
 
 function cardsView(){
   return `<section class="cards-grid">${filtered().map(a=>`
     <article class="trump ${a.id===state.selected?'selected':''}" data-id="${a.id}">
-      <div class="trump-head"><div><span>${a.airline}</span><h3>${a.call}</h3></div><button class="star ${a.saved?'on':''}" data-save="${a.id}">★</button></div>
-      <div class="route"><b>${a.from}</b><span>→</span><b>${a.to}</b></div>
-      <div class="silhouette">✈</div>
-      <div class="stats"><span><small>ALT</small>${a.alt.toLocaleString()} ft</span><span><small>SPD</small>${a.speed} kt</span><span><small>HDG</small>${a.hdg}°</span></div>
+      <div class="trump-head"><div><span>${a.airline}</span><h3>${a.flight}</h3><small>${a.call}</small></div><button class="star ${a.saved?'on':''}" data-save="${a.id}">â˜…</button></div>
+      <div class="route"><b>${a.from}</b><span>â†’</span><b>${a.to}</b></div>
+      <div class="silhouette">âœˆ</div>
+      <div class="stats"><span><small>ALT</small>${a.alt.toLocaleString()} ft</span><span><small>SPD</small>${a.speed} kt</span><span><small>HDG</small>${a.hdg}Â°</span></div>
       <div class="trump-foot"><span>${a.type}</span><span>${a.reg}</span><span class="${statusClass(a.vr)}">${fmtVr(a.vr)}</span></div>
     </article>`).join('')}</section>`;
 }
 
 function details(a){
   return `<aside class="detail ${state.detail?'open':''}">
-    <div class="detail-top"><button id="closeDetail"><i data-lucide="chevron-left"></i></button><span>AIRCRAFT DETAIL</span><button class="star big ${a.saved?'on':''}" data-save="${a.id}">★</button></div>
-    <div class="hero-plane"><div class="airline">${a.airline}</div><div class="hero-icon">✈</div><h2>${a.call}</h2><p>${a.flight} · ${a.model}</p></div>
-    <div class="detail-route"><div><small>FROM</small><b>${a.from}</b></div><span>━━━━ ✈ ━━━━</span><div><small>TO</small><b>${a.to}</b></div></div>
+    <div class="detail-top"><button id="closeDetail"><i data-lucide="chevron-left"></i></button><span>AIRCRAFT DETAIL</span><button class="star big ${a.saved?'on':''}" data-save="${a.id}">â˜…</button></div>
+    <div class="hero-plane"><div class="airline">${a.airline}</div><div class="hero-icon">âœˆ</div><h2>${a.call}</h2><p>${a.flight} Â· ${a.model}</p></div>
+    <div class="detail-route"><div><small>FROM</small><b>${a.from}</b></div><span>â”â”â”â” âœˆ â”â”â”â”</span><div><small>TO</small><b>${a.to}</b></div></div>
     <div class="metric-grid">
       <div><small>ALTITUDE</small><b>${a.alt.toLocaleString()}</b><em>ft</em></div>
       <div><small>GROUND SPEED</small><b>${a.speed}</b><em>kt</em></div>
-      <div><small>HEADING</small><b>${a.hdg}°</b><em>magnetic</em></div>
+      <div><small>HEADING</small><b>${a.hdg}Â°</b><em>magnetic</em></div>
       <div><small>VERTICAL RATE</small><b>${a.vr===0?'0':a.vr.toLocaleString()}</b><em>ft/min</em></div>
       <div><small>REGISTRATION</small><b>${a.reg}</b><em>${a.type}</em></div>
       <div><small>SQUAWK</small><b>${a.squawk}</b><em>Mode A</em></div>
     </div>
-    <div class="history"><h3>Recent trail</h3><div class="history-line"></div><p>Demo telemetry · ${a.dist} NM from scope centre</p></div>
+    <div class="history"><h3>Recent trail</h3><div class="history-line"></div><p>Demo telemetry Â· ${a.dist} NM from scope centre</p></div>
   </aside>`;
 }
 
@@ -121,11 +138,11 @@ function render(){
  app.innerHTML = `
  <main class="shell">
    <header>
-     <div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2 · LIVE PROTOTYPE</span></div></div>
+     <div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2 Â· LIVE PROTOTYPE</span></div></div>
      <div class="live"><i></i> DEMO FEED <b>${filtered().length}</b></div>
    </header>
    <div class="toolbar">
-     <div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registration…"></div>
+     <div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registrationâ€¦"></div>
      <button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button>
    </div>
    <div class="content">
@@ -163,3 +180,4 @@ function bind(){
  document.querySelector('#resetFilters').onclick=()=>{state.range=80;state.minAlt=0;state.maxAlt=45000;state.showTrails=true;state.showLabels=true;state.onlySaved=false;re()};
 }
 render();
+
