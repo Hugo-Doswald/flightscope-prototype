@@ -43,6 +43,12 @@ jobs:
       - name: Initialize Android project
         run: npm run tauri android init -- --ci
 
+      - name: Add Android Internet permission
+        shell: bash
+        run: |
+          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' "$MANIFEST"
+
       - name: Build universal debug APK
         run: npm run tauri android build -- --apk --debug --target aarch64
 
@@ -50,11 +56,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          find src-tauri/gen/android -type f -name "*.apk" -print -exec cp {} artifacts/FlightScope-v0.2.2-debug.apk \; | head -n 1
-          test -f artifacts/FlightScope-v0.2.2-debug.apk
+          find src-tauri/gen/android -type f -name "*.apk" -print -exec cp {} artifacts/FlightScope-v0.2.3-debug.apk \; | head -n 1
+          test -f artifacts/FlightScope-v0.2.3-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FlightScope-v0.2.2-APK
-          path: artifacts/FlightScope-v0.2.2-debug.apk
+          name: FlightScope-v0.2.3-APK
+          path: artifacts/FlightScope-v0.2.3-debug.apk
           if-no-files-found: error

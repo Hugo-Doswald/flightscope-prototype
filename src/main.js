@@ -1,6 +1,5 @@
 import './style.css';
 import './v022.css';
-import { invoke } from '@tauri-apps/api/core';
 import { createIcons, Radar, Map, PanelsTopLeft, Bookmark, SlidersHorizontal, Search, X, ChevronLeft, Plane } from 'lucide';
 
 const CENTER={lat:50.7344,lon:-3.4139,code:'EXT'}, REFRESH=15000, tracks=new Map();
@@ -28,7 +27,7 @@ async function refresh(force=false){
  const now=Date.now();if(!force&&now-lastFetch<1400)return;lastFetch=now;state.feed=aircraft.length?'LIVE ADS-B':'CONNECTING';render();
  try{
   const radius=Math.min(250,Math.max(state.range,state.mapRange));
-  const p=await invoke('fetch_live_aircraft',{lat:CENTER.lat,lon:CENTER.lon,radius});
+  const tauri=await import('@tauri-apps/api/core'); if(!tauri||typeof tauri.invoke!=='function') throw new Error('Tauri IPC is unavailable'); const p=await tauri.invoke('fetch_live_aircraft',{lat:CENTER.lat,lon:CENTER.lon,radius});
   aircraft=(Array.isArray(p?.ac)?p.ac:[]).map(normalise).filter(a=>Number.isFinite(a.lat)&&Number.isFinite(a.lon));
   updateTracks(aircraft);
   if(!state.selected||!aircraft.some(a=>a.id===state.selected)){state.selected=aircraft[0]?.id||null;state.detail=false;}
@@ -77,7 +76,7 @@ function filtersPanel(){return `<div class="drawer" id="drawer"><div class="draw
  <label>Minimum altitude <span>${state.minAlt.toLocaleString()} ft</span><input id="minAlt" type="range" min="0" max="40000" step="1000" value="${state.minAlt}"></label>
  <label>Maximum altitude <span>${state.maxAlt.toLocaleString()} ft</span><input id="maxAlt" type="range" min="5000" max="50000" step="1000" value="${state.maxAlt}"></label>
  <label class="toggle"><input id="trails" type="checkbox" ${state.showTrails?'checked':''}> Trails</label><label class="toggle"><input id="labels" type="checkbox" ${state.showLabels?'checked':''}> Data labels</label><label class="toggle"><input id="onlySaved" type="checkbox" ${state.onlySaved?'checked':''}> Saved aircraft only</label><button class="reset" id="resetFilters">RESET FILTERS</button></div>`}
-function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.2 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
+function render(){const a=selected();app.innerHTML=`<main class="shell"><header><div class="brand"><div class="brand-mark"><i data-lucide="radar"></i></div><div><h1>FLIGHTSCOPE</h1><span>V0.2.3 &middot; LIVE PROTOTYPE</span></div></div><div class="live ${state.feed==='FEED ERROR'?'error':''}"><i></i> ${state.feed} <b>${filtered().length}</b></div></header>
  <div class="toolbar"><div class="search"><i data-lucide="search"></i><input id="search" value="${state.search}" placeholder="Flight, callsign, registration..."></div><button id="filters"><i data-lucide="sliders-horizontal"></i><span>FILTERS</span></button></div>
  <div class="content view-${state.view}">${state.view==='radar'?radarView():state.view==='map'?mapView():cardsView()}${details(a)}</div>
  <nav><button data-view="radar" class="${state.view==='radar'?'active':''}"><i data-lucide="radar"></i><span>RADAR</span></button><button data-view="map" class="${state.view==='map'?'active':''}"><i data-lucide="map"></i><span>MAP</span></button><button data-view="cards" class="${state.view==='cards'?'active':''}"><i data-lucide="panels-top-left"></i><span>CARDS</span></button><button id="saved"><i data-lucide="bookmark"></i><span>SAVED</span></button></nav>${filtersPanel()}</main>`;
@@ -95,4 +94,4 @@ function bind(){
  document.querySelector('#resetFilters').onclick=()=>{state.range=20;state.minAlt=0;state.maxAlt=50000;state.showTrails=true;state.showLabels=true;state.onlySaved=false;re();queueRefresh()};
  const mi=document.querySelector('#mapIn'),mo=document.querySelector('#mapOut');if(mi)mi.onclick=()=>{state.mapRange=Math.max(20,state.mapRange/2);render();queueRefresh()};if(mo)mo.onclick=()=>{state.mapRange=Math.min(250,state.mapRange*2);render();queueRefresh()};
 }
-render();refresh(true);setInterval(()=>refresh(),REFRESH);
+try{render();setTimeout(()=>refresh(true),250);setInterval(()=>refresh(),REFRESH)}catch(e){console.error(e);document.body.innerHTML='<div style="padding:24px;background:#050906;color:#d7fbe4;font-family:system-ui"><h2>FlightScope V0.2.3 startup error</h2><pre style="white-space:pre-wrap;color:#ffb28e">'+String(e)+'</pre></div>'}
